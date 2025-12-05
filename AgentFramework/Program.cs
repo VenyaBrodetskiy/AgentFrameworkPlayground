@@ -22,7 +22,7 @@ static string GetWeather([Description("The location to get the weather for.")] s
 var agent = new OpenAIClient(apiKey)
     .GetChatClient(modelName)
     .CreateAIAgent(
-        instructions: "always say 'hello my dear' before answering question", 
+        instructions: "always say 'just a second' before answering question", 
         tools: [AIFunctionFactory.Create(GetWeather)],
         name: "myagent");
 #pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
