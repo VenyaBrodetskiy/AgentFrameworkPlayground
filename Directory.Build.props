@@ -1,0 +1,8 @@
+<Project>
+  <ItemGroup Condition="Exists('$(MSBuildThisFileDirectory)appsettings.Development.json')">
+    <None Include="$(MSBuildThisFileDirectory)appsettings.Development.json"
+          Link="appsettings.Development.json"
+          CopyToOutputDirectory="Always"
+          Visible="True" />
+  </ItemGroup>
+</Project>
