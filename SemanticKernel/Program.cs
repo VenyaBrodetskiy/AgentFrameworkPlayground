@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Reflection;
 using Common;
 using Microsoft.Extensions.Configuration;
 using Microsoft.SemanticKernel;
@@ -7,6 +8,8 @@ using Microsoft.SemanticKernel.Connectors.AzureOpenAI;
 
 #pragma warning disable SKEXP0010 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 #pragma warning disable SKEXP0001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
+
+Console.WriteLine($"=== Running: {Assembly.GetEntryAssembly()?.GetName().Name} ===");
 
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -46,6 +49,10 @@ do
     ConsoleUi.WriteUserPrompt();
 
     var userInput = Console.ReadLine();
+    if (string.IsNullOrWhiteSpace(userInput) || userInput.Trim().Equals("exit", StringComparison.OrdinalIgnoreCase))
+    {
+        break;
+    }
 
     history.AddUserMessage(userInput);
 
