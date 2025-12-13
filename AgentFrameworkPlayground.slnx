@@ -1,5 +1,6 @@
 <Solution>
   <Project Path="AgentFramework/AgentFramework.csproj" />
+  <Project Path="AgentFrameworkStructuredOutput/AgentFrameworkStructuredOutput.csproj" Id="4baff2a5-9315-449a-bc33-b3548e0393a6" />
   <Project Path="Common/Common.csproj" Id="ad37a34d-243c-4891-b4d1-9a8f4ee65367" />
   <Project Path="SemanticKernel/SemanticKernel.csproj" Id="a60a7fae-9fe7-42a1-ae58-bb532e8c76a6" />
   <Project Path="SemanticKernelAgentFramework/SemanticKernelAgentFramework.csproj" Id="d153a380-337a-4f28-bb92-67778df97ef8" />
