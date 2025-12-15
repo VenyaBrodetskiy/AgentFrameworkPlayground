@@ -4,8 +4,6 @@ using Azure.Identity;
 using Common;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Logging;
-using OpenAI.Chat;
 using System.Reflection;
 
 #pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
@@ -28,7 +26,7 @@ try
 {
     agent = await aiProjectClient.GetAIAgentAsync(agentId);
 }
-catch (Exception e)
+catch (Exception)
 {
     agent = await aiProjectClient.CreateAIAgentAsync(
         model: modelName,

@@ -1,6 +1,7 @@
 <Solution>
   <Project Path="AgentFramework/1-AgentFramework.csproj" />
   <Project Path="AgentFrameworkFoundryAgent/4-AgentFrameworkFoundryAgent.csproj" Id="d7654732-4fda-471e-93e7-4c99f5fe52e5" />
+  <Project Path="AgentFrameworkRag/5-AgentFrameworkRag.csproj" />
   <Project Path="AgentFrameworkStructuredOutput/2-AgentFrameworkStructuredOutput.csproj" Id="4baff2a5-9315-449a-bc33-b3548e0393a6" />
   <Project Path="AgentFrameworkThreadPersistancy/3-AgentFrameworkThreadPersistancy.csproj" Id="8d05ac94-22fc-4847-92e8-1b434e700f22" />
   <Project Path="Common/Common.csproj" Id="ad37a34d-243c-4891-b4d1-9a8f4ee65367" />
