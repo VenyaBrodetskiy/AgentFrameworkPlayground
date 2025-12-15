@@ -12,43 +12,57 @@ internal sealed class HumanInboxExecutor(string id) : Executor(id)
 {
     protected override RouteBuilder ConfigureRoutes(RouteBuilder routeBuilder) =>
         routeBuilder
-            .AddHandler<HumanHandoffPackage>(this.HandleAsync)
-            .AddHandler<RefundRequest>(this.HandleAsync);
+            .AddHandler<HumanHandoffPackage, FinalSignal>(HandleHandoffAsync)
+            .AddHandler<RefundRequest, FinalSignal>(HandleRefundAsync);
 
-    public async ValueTask HandleAsync(HumanHandoffPackage message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    private async ValueTask<FinalSignal> HandleHandoffAsync(HumanHandoffPackage handoff, IWorkflowContext context)
     {
-        await context.AddEventAsync(new SentToHumanEvent($"Sent to human queue '{message.Queue}' (SLA {message.Sla})."), cancellationToken);
+        await context.AddEventAsync(new SentToHumanEvent($"Sent to human queue '{handoff.Queue}' (SLA {handoff.Sla})."));
 
-        await context.YieldOutputAsync(
+        var output =
             $"""
             Escalated to human support.
 
-            Queue: {message.Queue}
-            SLA: {message.Sla}
-            Summary: {message.Summary}
+            Queue: {handoff.Queue}
+            SLA: {handoff.Sla}
+            Summary: {handoff.Summary}
 
             Suggested next steps:
-            - {string.Join("\n- ", message.RecommendedNextSteps)}
-            """,
-            cancellationToken);
+            - {string.Join("\n- ", handoff.RecommendedNextSteps)}
+            """;
+
+        await context.QueueStateUpdateAsync(SupportRunState.KeyHumanInboxOutput, output, scopeName: SupportRunState.ScopeName);
+
+        return new FinalSignal
+        {
+            TerminalExecutorId = Id,
+            Note = "Sent escalation package to human inbox"
+        };
     }
 
-    public async ValueTask HandleAsync(RefundRequest message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    private async ValueTask<FinalSignal> HandleRefundAsync(RefundRequest refund, IWorkflowContext context)
     {
-        await context.AddEventAsync(new SentToHumanEvent($"Refund request {message.RefundRequestId} sent to human reviewer (SLA {message.Sla})."), cancellationToken);
+        await context.AddEventAsync(new SentToHumanEvent($"Refund request {refund.RefundRequestId} sent to human reviewer (SLA {refund.Sla})."));
 
-        await context.YieldOutputAsync(
+        var output =
             $"""
             Refund request created and sent for human review.
 
-            RefundRequestId: {message.RefundRequestId}
-            OrderId: {message.OrderId ?? "(unknown)"}
-            SLA: {message.Sla}
+            RefundRequestId: {refund.RefundRequestId}
+            OrderId: {refund.OrderId ?? "(unknown)"}
+            SLA: {refund.Sla}
 
             Customer acknowledgement (deterministic):
-            {message.CustomerReply}
-            """,
-            cancellationToken);
+            {refund.CustomerReply}
+            """;
+
+        await context.QueueStateUpdateAsync(SupportRunState.KeyHumanInboxOutput, output, scopeName: SupportRunState.ScopeName);
+
+        return new FinalSignal
+        {
+            TerminalExecutorId = Id,
+            Note = "Sent refund request to human inbox"
+        };
     }
 }
 

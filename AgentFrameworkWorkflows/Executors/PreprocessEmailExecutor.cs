@@ -48,6 +48,7 @@ internal sealed partial class PreprocessEmailExecutor(string id) : Executor<stri
         };
 
         await context.AddEventAsync(new EmailPreprocessedEvent(email), cancellationToken);
+        await context.QueueStateUpdateAsync(SupportRunState.KeyEmail, email, scopeName: SupportRunState.ScopeName);
         return email;
     }
 

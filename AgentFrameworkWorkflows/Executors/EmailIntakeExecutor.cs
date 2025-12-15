@@ -56,6 +56,7 @@ internal sealed class EmailIntakeExecutor : Executor<EmailDocument, IntakeContex
 
         var intakeContext = new IntakeContext { Email = message, Intake = intake };
         await context.AddEventAsync(new IntakeCompletedEvent(intakeContext), cancellationToken);
+        await context.QueueStateUpdateAsync(SupportRunState.KeyIntake, intakeContext, scopeName: SupportRunState.ScopeName);
 
         return intakeContext;
     }

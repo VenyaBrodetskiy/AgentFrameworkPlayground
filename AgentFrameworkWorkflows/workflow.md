@@ -7,6 +7,7 @@ flowchart TD
   human_inbox["human_inbox"]
   responder_agent["responder_agent"]
   refund_request["refund_request"]
+  final_summary["final_summary (Output)"]
 
   preprocess_email --> intake_agent
   intake_agent --> policy_gate
@@ -15,4 +16,6 @@ flowchart TD
   policy_gate -.->|conditional| refund_request
   human_prep --> human_inbox
   refund_request --> human_inbox
+  responder_agent --> final_summary
+  human_inbox --> final_summary
 ```

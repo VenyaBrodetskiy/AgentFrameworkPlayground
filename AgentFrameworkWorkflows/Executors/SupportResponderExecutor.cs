@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using AgentFrameworkWorkflows.Events;
 using AgentFrameworkWorkflows.Models;
@@ -11,13 +10,16 @@ namespace AgentFrameworkWorkflows.Executors;
 /// <summary>
 /// Agent 2 (structured output): drafts a customer reply + internal notes, following policy constraints.
 /// </summary>
-internal sealed class SupportResponderExecutor : Executor<PolicyContext>
+internal sealed class SupportResponderExecutor : Executor<PolicyContext, FinalSignal>
 {
     private readonly AIAgent _agent;
     private readonly AgentThread _thread;
+    private readonly string _executorId;
 
     public SupportResponderExecutor(string id, IChatClient chatClient) : base(id)
     {
+        _executorId = id;
+
         ChatClientAgentOptions agentOptions = new()
         {
             ChatOptions = new()
@@ -37,7 +39,7 @@ internal sealed class SupportResponderExecutor : Executor<PolicyContext>
         _thread = _agent.GetNewThread();
     }
 
-    public override async ValueTask HandleAsync(PolicyContext message, IWorkflowContext context, CancellationToken cancellationToken = default)
+    public override async ValueTask<FinalSignal> HandleAsync(PolicyContext message, IWorkflowContext context, CancellationToken cancellationToken = default)
     {
         var compliance = message.Policy.ComplianceNotes.Count == 0
             ? "(none)"
@@ -86,36 +88,13 @@ internal sealed class SupportResponderExecutor : Executor<PolicyContext>
         };
 
         await context.AddEventAsync(new ResponseDraftedEvent(info), cancellationToken);
+        await context.QueueStateUpdateAsync(SupportRunState.KeyResponderOutput, output, scopeName: SupportRunState.ScopeName);
 
-        var rendered = RenderForConsole(output);
-        await context.YieldOutputAsync(rendered, cancellationToken);
-    }
-
-    private static string RenderForConsole(ResponderOutput output)
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Customer reply:");
-        sb.AppendLine(output.CustomerReply.Trim());
-        sb.AppendLine();
-
-        sb.AppendLine("Clarifying questions:");
-        if (output.ClarifyingQuestions.Count == 0)
+        return new FinalSignal
         {
-            sb.AppendLine("- (none)");
-        }
-        else
-        {
-            foreach (var q in output.ClarifyingQuestions)
-            {
-                sb.AppendLine($"- {q}");
-            }
-        }
-
-        sb.AppendLine();
-        sb.AppendLine("Internal notes:");
-        sb.AppendLine(output.InternalNotes.Trim());
-
-        return sb.ToString();
+            TerminalExecutorId = _executorId,
+            Note = message.Policy.Mode == ResponseMode.AskClarifyingQuestions ? "Clarification email drafted" : "Customer reply drafted"
+        };
     }
 }
 

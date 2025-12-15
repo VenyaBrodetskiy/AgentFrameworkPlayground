@@ -55,6 +55,21 @@ internal sealed class PolicyGateExecutor(string id) : Executor<IntakeContext, Po
         };
 
         await context.AddEventAsync(new PolicyAppliedEvent(policyContext), cancellationToken);
+        await context.QueueStateUpdateAsync(SupportRunState.KeyPolicy, policyContext, scopeName: SupportRunState.ScopeName);
+
+        var isEscalation = policyContext.Intake.Sentiment == Sentiment.Negative && policyContext.Intake.Urgency == UrgencyLevel.High;
+        var isClarification = policyContext.Policy.Mode == ResponseMode.AskClarifyingQuestions && !isEscalation;
+        var isRefund = policyContext.Policy.Mode == ResponseMode.DraftReply && policyContext.Intake.Intent == UserIntent.Refund && !isEscalation;
+        var isNormal = policyContext.Policy.Mode == ResponseMode.DraftReply && policyContext.Intake.Intent != UserIntent.Refund && !isEscalation;
+
+        var route =
+            isEscalation ? "Human escalation" :
+            isClarification ? "Clarification email" :
+            isRefund ? "Refund request (human review)" :
+            isNormal ? "Normal reply" :
+            "(no matching route)";
+
+        await context.QueueStateUpdateAsync(SupportRunState.KeySelectedRoute, route, scopeName: SupportRunState.ScopeName);
         return policyContext;
     }
 }

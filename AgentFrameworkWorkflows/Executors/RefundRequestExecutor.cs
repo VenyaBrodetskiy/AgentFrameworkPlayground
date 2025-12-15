@@ -39,6 +39,7 @@ internal sealed class RefundRequestExecutor(string id) : Executor<PolicyContext,
         };
 
         await context.AddEventAsync(new RefundRequestCreatedEvent(request), cancellationToken);
+        await context.QueueStateUpdateAsync(SupportRunState.KeyRefundRequest, request, scopeName: SupportRunState.ScopeName);
         return request;
     }
 }

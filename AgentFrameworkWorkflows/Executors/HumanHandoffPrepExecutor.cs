@@ -46,6 +46,7 @@ internal sealed class HumanHandoffPrepExecutor(string id) : Executor<PolicyConte
         };
 
         await context.AddEventAsync(new HumanHandoffPreparedEvent(package), cancellationToken);
+        await context.QueueStateUpdateAsync(SupportRunState.KeyHumanHandoff, package, scopeName: SupportRunState.ScopeName);
         return package;
     }
 }
