@@ -1,3 +1,4 @@
+using System.Reflection;
 using AgentFrameworkWorkflows;
 using AgentFrameworkWorkflows.Events;
 using AgentFrameworkWorkflows.Executors;
@@ -8,7 +9,6 @@ using Common;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
-using System.Reflection;
 
 Console.WriteLine($"=== Running: {Assembly.GetEntryAssembly()?.GetName().Name} ===");
 
@@ -41,7 +41,7 @@ static Workflow BuildWorkflow(IChatClient chatClient)
     var intake = new EmailIntakeExecutor(id: "intake_agent", chatClient);
     var policyGate = new PolicyGateExecutor(id: "policy_gate");
     var responder = new SupportResponderExecutor(id: "responder_agent", chatClient);
-    var humanPrep = new HumanHandoffPrepExecutor(id: "human_prep");
+    var humanPrep = new HumanHandoffPrepExecutor(id: "human_prep", chatClient);
     var refundRequest = new RefundRequestExecutor(id: "refund_request");
     var humanInbox = new HumanInboxExecutor(id: "human_inbox");
     var finalSummary = new FinalSummaryExecutor(id: "final_summary");
@@ -90,7 +90,7 @@ static Workflow BuildWorkflow(IChatClient chatClient)
 
 foreach (var (title, email) in SampleEmails.Examples)
 {
-    ConsoleUi.WriteSection(title, email, ConsoleColor.Cyan);
+    ConsoleUi.WriteSection(title, email);
 
     var workflow = BuildWorkflow(chatClient);
 
@@ -138,9 +138,10 @@ foreach (var (title, email) in SampleEmails.Examples)
 
             case HumanHandoffPreparedEvent e:
                 ConsoleUi.WriteColoredLine(
-                    $"\n[Human Prep|Deterministic] Queue='{e.Package.Queue}' | SLA={e.Package.Sla} | Summary='{e.Package.Summary}'",
+                    $"\n[Human Prep|Hybrid] Queue='{e.Package.Queue}' | SLA={e.Package.Sla} | Steps={e.Package.RecommendedNextSteps.Count}",
                     ConsoleColor.DarkCyan);
-                Console.WriteLine("  Summary: Prepared a concise package for a human to act on.");
+                Console.WriteLine($"  Summary: {e.Package.Summary}");
+                Console.WriteLine($"  Next Steps: {SupportWorkflowConsole.FormatShortList(e.Package.RecommendedNextSteps)}");
                 break;
 
             case RefundRequestCreatedEvent e:
@@ -156,7 +157,7 @@ foreach (var (title, email) in SampleEmails.Examples)
                 break;
 
             case WorkflowOutputEvent outputEvent:
-                ConsoleUi.WriteSectionTitle("Workflow Output", ConsoleColor.Cyan);
+                ConsoleUi.WriteSectionTitle("Workflow Output");
                 Console.WriteLine(outputEvent.Is<string>() ? outputEvent.As<string>() : outputEvent.Data);
                 break;
 
