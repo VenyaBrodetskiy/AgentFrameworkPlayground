@@ -77,7 +77,15 @@ internal sealed class SupportResponderExecutor : Executor<PolicyContext>
         var output = JsonSerializer.Deserialize<ResponderOutput>(response.Text)
             ?? throw new InvalidOperationException("Failed to deserialize ResponderOutput.");
 
-        await context.AddEventAsync(new ResponseDraftedEvent("ok"), cancellationToken);
+        var info = new ResponseDraftInfo
+        {
+            Mode = message.Policy.Mode,
+            ClarifyingQuestionsCount = output.ClarifyingQuestions.Count,
+            CustomerReplyCharacters = output.CustomerReply?.Length ?? 0,
+            InternalNotesCharacters = output.InternalNotes?.Length ?? 0
+        };
+
+        await context.AddEventAsync(new ResponseDraftedEvent(info), cancellationToken);
 
         var rendered = RenderForConsole(output);
         await context.YieldOutputAsync(rendered, cancellationToken);
