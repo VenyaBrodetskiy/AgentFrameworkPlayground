@@ -11,11 +11,15 @@ using Microsoft.Extensions.Configuration;
 
 Console.WriteLine($"=== Running: {Assembly.GetEntryAssembly()?.GetName().Name} ===");
 
-// customer support email intake + compliant draft reply.
-// - Deterministic executor: preprocess (clean + basic PII detection/masking)
-// - Agent 1 (structured output): intake/classification (category/urgency/intent/missing info)
-// - Deterministic executor: policy gate (redaction + response mode)
-// - Agent 2 (structured output): responder (customer reply + internal notes)
+// Customer support email workflow (concise):
+// 1) Preprocess (deterministic): clean text + detect/mask basic PII + extract identifiers (order id, email, phone).
+// 2) Intake (agent): classify category/urgency/sentiment/intent + list missing info.
+// 3) Policy (deterministic): decide response mode + SLA + compliance notes + select route.
+// 4) Route (conditional):
+//    - Escalate: human_prep -> human_inbox
+//    - Refund automation: refund_request -> human_inbox
+//    - Otherwise: responder (agent) drafts email
+// 5) Final summary (deterministic): reads shared state and prints final flow + email (if any).
 
 var configuration = new ConfigurationBuilder()
     .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
@@ -109,6 +113,8 @@ foreach (var (title, email) in examples)
     ConsoleUi.WriteSection(title, email, ConsoleColor.Cyan);
 
     var workflow = BuildWorkflow(chatClient);
+
+    ConsoleUi.WriteSectionTitle("Workflow log (reasoning)", ConsoleColor.DarkGray);
 
     await using StreamingRun run = await InProcessExecution.StreamAsync(workflow, input: email);
 
