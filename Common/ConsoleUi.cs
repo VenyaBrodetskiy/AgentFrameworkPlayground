@@ -9,6 +9,13 @@ public static class ConsoleUi
     public static void WriteAgentChunk(object? chunk) =>
         WriteColored(chunk?.ToString() ?? string.Empty, ConsoleColor.Yellow);
 
+    public static void WriteHistoricalUserPrompt() => WritePrefix("Me > ", ConsoleColor.DarkCyan);
+
+    public static void WriteHistoricalAgentPrompt() => WritePrefix("Agent > ", ConsoleColor.DarkGreen);
+
+    public static void WriteHistoricalMessage(string text) =>
+        WriteColored(text, ConsoleColor.DarkGray);
+
     private static void WritePrefix(string text, ConsoleColor color)
     {
         Console.ForegroundColor = color;
