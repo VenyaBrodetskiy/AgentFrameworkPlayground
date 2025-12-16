@@ -186,7 +186,7 @@ foreach (var (title, email) in SampleEmails.Examples)
 }
 
 // Flush and dispose tracer to ensure all spans are exported
-tracerProvider?.Dispose();
+tracerProvider.Dispose();
 
 //Workflow workflowForViz = buildWorkflow();
 //ConsoleUi.WriteSectionTitle("Workflow (Mermaid)", ConsoleColor.DarkCyan);
