@@ -9,8 +9,23 @@ using Common;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Configuration;
+using OpenTelemetry;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 
 Console.WriteLine($"=== Running: {Assembly.GetEntryAssembly()?.GetName().Name} ===");
+
+// Set up OpenTelemetry tracing for workflow visualization
+var tracerProvider = Sdk.CreateTracerProviderBuilder()
+    .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("AgentFrameworkWorkflows"))
+    .AddSource("Microsoft.Agents.AI.*")
+    .SetSampler(new AlwaysOnSampler())
+    .AddOtlpExporter(options =>
+    {
+        options.Endpoint = new Uri("http://localhost:4319");
+        options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
+    })
+    .Build();
 
 // Customer support email workflow (concise):
 // 1) Preprocess (deterministic): clean text + detect/mask basic PII + extract identifiers (order id, email, phone).
@@ -169,6 +184,9 @@ foreach (var (title, email) in SampleEmails.Examples)
 
     Console.WriteLine("\n------------------------------------------------------------\n");
 }
+
+// Flush and dispose tracer to ensure all spans are exported
+tracerProvider?.Dispose();
 
 //Workflow workflowForViz = buildWorkflow();
 //ConsoleUi.WriteSectionTitle("Workflow (Mermaid)", ConsoleColor.DarkCyan);
