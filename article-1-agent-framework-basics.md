@@ -81,7 +81,7 @@ var agent = new AzureOpenAIClient(
 // Create a thread for conversation
 var thread = agent.GetNewThread();
 
-// Run the agent
+// Run the agent with streaming
 var streamingResponse = agent.RunStreamingAsync(userInput, thread);
 await foreach (var chunk in streamingResponse)
 {
@@ -91,12 +91,42 @@ await foreach (var chunk in streamingResponse)
 
 **What's happening here?**
 
-1. We define a simple C# method `GetWeather` with description attributes
-2. `AIFunctionFactory.Create()` converts it into a tool the LLM can discover and invoke
-3. `CreateAIAgent()` sets up our agent with instructions and available tools
-4. The agent automatically decides when to call the weather function based on user queries
+1. **Function Definition**: We define a simple C# method with `[Description]` attributes. These descriptions are crucial — they're sent to the LLM to help it understand when and how to use the tool.
 
-This pattern is remarkably clean compared to earlier frameworks. No kernel configuration, no plugin registration ceremony — just your function, your agent, and you're running.
+2. **Tool Registration**: `AIFunctionFactory.Create()` uses reflection to analyze your method's signature and attributes, then generates the tool schema the LLM expects. This schema includes parameter names, types, and descriptions.
+
+3. **Agent Creation**: `CreateAIAgent()` is an extension method that wraps the `ChatClient` and provides agent-specific capabilities. The `instructions` parameter sets the system prompt that guides the agent's behavior.
+
+4. **Thread Management**: `GetNewThread()` creates a conversation context that maintains message history. Each thread is isolated, allowing you to manage multiple conversations independently.
+
+5. **Streaming Execution**: `RunStreamingAsync()` sends the user input to the LLM and streams back responses in chunks. This provides immediate feedback to users instead of waiting for the complete response.
+
+**Under the Hood: Function Calling Flow**
+
+When a user asks "What's the weather in Paris?", here's what happens:
+
+1. The LLM receives the question and the available tool schemas
+2. It decides to call `GetWeather` with parameter `location: "Paris"`
+3. Agent Framework intercepts this, executes your C# method
+4. The result is sent back to the LLM as a "tool message"
+5. The LLM incorporates the result into its final response: "Just a second... The weather in Paris is cloudy with a high of 15°C."
+
+This orchestration happens automatically — you just define functions and the framework handles the rest.
+
+**Why This Matters**
+
+Compared to Semantic Kernel's plugin registration ceremony, this is dramatically simpler:
+
+```csharp
+// Semantic Kernel approach (more verbose)
+var kernel = builder.Build();
+kernel.ImportPluginFromFunctions("WeatherPlugin",
+    new[] { KernelFunctionFactory.CreateFromMethod(GetWeather) });
+
+// Agent Framework approach (concise)
+var weatherFunction = AIFunctionFactory.Create(GetWeather);
+var agent = chatClient.CreateAIAgent(tools: [weatherFunction]);
+```
 
 You can find the complete implementation in the [AgentFramework project](https://github.com/VenyaBrodetskiy/AgentFrameworkPlayground/tree/main/AgentFramework).
 
@@ -107,38 +137,84 @@ One of the most powerful features in Agent Framework is the ability to extract s
 Here's how to extract structured information from a meeting transcript:
 
 ```csharp
-// Define your output structure
-public class MeetingInfo
+// Define your output structure with nested types
+[Description("Structured meeting information")]
+public class MeetingAnalysis
 {
-    [Description("The title of the meeting")]
-    public string Title { get; set; }
+    [JsonPropertyName("date")]
+    public string? Date { get; set; }
 
-    [Description("List of participants")]
-    public List<string> Participants { get; set; }
+    [JsonPropertyName("duration_minutes")]
+    public int? DurationMinutes { get; set; }
 
-    [Description("Key action items")]
-    public List<string> ActionItems { get; set; }
+    [JsonPropertyName("attendees")]
+    public List<string>? Attendees { get; set; }
+
+    [JsonPropertyName("decisions")]
+    public List<string>? Decisions { get; set; }
+
+    [JsonPropertyName("action_items")]
+    public List<ActionItem>? ActionItems { get; set; }
 }
 
-// Run the agent with structured output
-var result = await agent.RunAsync<MeetingInfo>(
-    "Analyze this transcript: ...",
+public class ActionItem
+{
+    [JsonPropertyName("assignee")]
+    public string? Assignee { get; set; }
+
+    [JsonPropertyName("task")]
+    public string? Task { get; set; }
+
+    [JsonPropertyName("due_date")]
+    public string? DueDate { get; set; }
+}
+
+// Create the agent
+var agent = chatClient.CreateAIAgent(
+    name: "MeetingAnalyzer",
+    instructions: "You are an assistant that extracts structured information from meeting transcripts.");
+
+// Run with structured output - notice the generic type parameter
+var response = await agent.RunAsync<MeetingAnalysis>(
+    $"Please analyze this meeting transcript and extract key information:\n\n{meetingTranscript}",
     thread
 );
 
-// Access type-safe properties
-Console.WriteLine($"Meeting: {result.Title}");
-foreach (var item in result.ActionItems)
+// Access type-safe properties - no parsing needed!
+Console.WriteLine($"Meeting Date: {response.Result.Date}");
+Console.WriteLine($"Duration: {response.Result.DurationMinutes} minutes");
+Console.WriteLine($"Attendees: {string.Join(", ", response.Result.Attendees)}");
+
+foreach (var item in response.Result.ActionItems)
 {
-    Console.WriteLine($"- {item}");
+    Console.WriteLine($"- {item.Assignee}: {item.Task} (due: {item.DueDate})");
 }
 ```
 
-**Key benefits:**
+**How It Works: JSON Schema Generation**
 
-- Type-safe responses — no string parsing required
-- JSON schema is automatically generated from your C# classes
-- Description attributes guide the LLM on what to extract
+When you call `RunAsync<MeetingAnalysis>()`, Agent Framework:
+
+1. **Generates a JSON schema** from your C# class using reflection
+2. **Sends it to the LLM** as part of the function calling specification
+3. **Constrains the response** to match your schema exactly
+4. **Deserializes** the JSON response into your strongly-typed object
+
+The `[Description]` attributes on your class help the LLM understand what each field represents, improving extraction accuracy. The `[JsonPropertyName]` attributes control the JSON property names, which is especially useful when working with LLMs that expect specific naming conventions (like snake_case).
+
+**Key Benefits:**
+
+- **Type safety**: Compile-time checking, IntelliSense support, refactoring confidence
+- **No manual parsing**: No regex, no JSON.Parse, no string manipulation
+- **Automatic validation**: The LLM's response is validated against your schema
+- **Nested objects**: Full support for complex hierarchies (see `ActionItem` nested in `MeetingAnalysis`)
+
+**Real-World Use Cases:**
+
+- **Entity extraction**: Pull structured data from documents, emails, or forms
+- **Classification**: Convert natural language into enum values or categories
+- **Data normalization**: Transform varied input formats into consistent schemas
+- **Workflow intake**: Capture structured information from user requests
 
 This pattern is invaluable for building agents that need to extract entities, classify content, or transform unstructured data into structured records.
 
@@ -149,27 +225,114 @@ Check out the full example in the [AgentFrameworkStructuredOutput project](https
 In production scenarios, you often need to save and resume conversations. Agent Framework makes this straightforward with custom storage providers.
 
 ```csharp
-// Create custom stores
-var threadStore = new FileThreadStore("./threads");
-var messageStore = new FileChatMessageStore("./messages");
+// Create custom storage providers
+var threadStore = new FileThreadStore(
+    storageDirectory: "./threads",
+    threadStateFileName: "thread-state.json");
 
-// Save a thread
-await threadStore.SaveThreadAsync(thread);
+// Save the current conversation thread
+threadStore.Save(thread);
 
-// Later, resume the conversation
-var loadedThread = await threadStore.LoadThreadAsync(threadId);
-var messages = await messageStore.LoadMessagesAsync(threadId);
+// Later, when the user returns
+if (threadStore.Exists)
+{
+    // Deserialize the thread using the agent's deserializer
+    var loadedThread = threadStore.Load(thread.Deserialize);
 
-// Continue where you left off
-var response = await agent.RunAsync(newUserInput, loadedThread);
+    // Continue the conversation
+    var response = await agent.RunAsync(newUserInput, loadedThread);
+}
 ```
 
-The example implementation uses file-based storage, but you can easily adapt the pattern for databases, Redis, or any other persistence layer. The key interfaces to implement are:
+**How Thread Serialization Works**
 
-- `IThreadStore`: Manages thread metadata
-- `IChatMessageStore`: Handles message history
+Agent Framework provides built-in serialization methods on `AgentThread`:
 
-This approach gives you full control over conversation persistence while maintaining a clean API.
+```csharp
+public void Save(AgentThread thread)
+{
+    // Serialize thread to JsonElement
+    var serializedThread = thread.Serialize();
+
+    // Convert to JSON string
+    var threadStateJson = JsonSerializer.Serialize(
+        serializedThread,
+        new JsonSerializerOptions { WriteIndented = true });
+
+    // Persist to file (or database, Redis, etc.)
+    File.WriteAllText(_threadStatePath, threadStateJson);
+}
+
+public AgentThread Load(Func<JsonElement, AgentThread> deserializeThread)
+{
+    // Read JSON from storage
+    var threadStateJson = File.ReadAllText(_threadStatePath);
+
+    // Parse as JsonElement
+    var serializedThread = JsonSerializer.Deserialize<JsonElement>(threadStateJson);
+
+    // Use the provided deserializer to reconstruct the thread
+    return deserializeThread(serializedThread);
+}
+```
+
+The `thread.Serialize()` and `thread.Deserialize()` methods handle the complexity of converting thread state (including message history, metadata, and agent context) to and from JSON.
+
+**Implementing Custom Storage**
+
+The file-based implementation is just one option. You can easily adapt this pattern for any storage backend:
+
+**Database Storage:**
+```csharp
+public class DatabaseThreadStore
+{
+    private readonly DbContext _context;
+
+    public async Task SaveAsync(AgentThread thread, string userId)
+    {
+        var serialized = thread.Serialize();
+        var json = JsonSerializer.Serialize(serialized);
+
+        await _context.ThreadStates.AddAsync(new ThreadState
+        {
+            UserId = userId,
+            ThreadId = thread.Id,
+            StateJson = json,
+            UpdatedAt = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync();
+    }
+}
+```
+
+**Redis Storage:**
+```csharp
+public class RedisThreadStore
+{
+    private readonly IDatabase _redis;
+
+    public async Task SaveAsync(AgentThread thread, TimeSpan expiry)
+    {
+        var serialized = thread.Serialize();
+        var json = JsonSerializer.Serialize(serialized);
+
+        await _redis.StringSetAsync(
+            key: $"thread:{thread.Id}",
+            value: json,
+            expiry: expiry);
+    }
+}
+```
+
+**Why Thread Persistence Matters**
+
+1. **User Experience**: Users can continue conversations across sessions
+2. **Cost Optimization**: Avoid re-processing context in every request
+3. **Compliance**: Maintain conversation history for audit trails
+4. **Analytics**: Track conversation patterns and user interactions
+
+This approach gives you full control over conversation persistence while maintaining a clean API. Whether you store threads in files, databases, or distributed caches, the pattern remains the same.
 
 Explore the complete implementation in the [AgentFrameworkThreadPersistancy project](https://github.com/VenyaBrodetskiy/AgentFrameworkPlayground/tree/main/AgentFrameworkThreadPersistancy).
 
@@ -210,44 +373,171 @@ See the working example in the [AgentFrameworkFoundryAgent project](https://gith
 
 ## Example 5: RAG with Vector Search
 
-Retrieval-Augmented Generation (RAG) enhances agents with external knowledge. Agent Framework integrates RAG through `TextSearchProvider`, which injects relevant context into agent prompts.
+Retrieval-Augmented Generation (RAG) enhances agents with external knowledge. Agent Framework integrates RAG through `TextSearchProvider`, which injects relevant context into agent prompts automatically.
+
+### Setting Up the Vector Store
+
+First, define your document schema using vector store attributes:
 
 ```csharp
-// Create an in-memory vector store
-var vectorStore = new InMemoryVectorStore();
-var collection = vectorStore.GetCollection<string, Document>("docs");
+private sealed class SearchRecord
+{
+    // Embedding dimension must match your model (e.g., text-embedding-3-large is 3072)
+    private const int EmbeddingDimensions = 3072;
 
-// Generate embeddings and store documents
-var embeddingGenerator = new AzureOpenAIClient(...)
+    [VectorStoreKey]
+    public required string SourceId { get; init; }
+
+    [VectorStoreData]
+    public string? SourceName { get; init; }
+
+    [VectorStoreData]
+    public string? SourceLink { get; init; }
+
+    [VectorStoreData(IsFullTextIndexed = true)]
+    public string? Text { get; init; }
+
+    [VectorStoreVector(EmbeddingDimensions)]
+    public ReadOnlyMemory<float> TextEmbedding { get; init; }
+}
+```
+
+**Attribute Breakdown:**
+
+- `[VectorStoreKey]`: Identifies the unique record identifier
+- `[VectorStoreData]`: Marks metadata fields that are stored but not searched
+- `[VectorStoreData(IsFullTextIndexed = true)]`: Enables full-text search on this field
+- `[VectorStoreVector(dimensions)]`: Marks the embedding vector field
+
+### Creating and Populating the Knowledge Base
+
+```csharp
+// Initialize vector store and embedding generator
+var vectorStore = new InMemoryVectorStore();
+var embeddingGenerator = new AzureOpenAIClient(
+        new Uri(endpoint),
+        new AzureKeyCredential(apiKey))
     .GetEmbeddingClient(embeddingModel);
 
+// Create collection with automatic embedding generation
+var collection = vectorStore.GetCollection<string, SearchRecord>(
+    "product-and-policy-info",
+    new VectorStoreCollectionDefinition
+    {
+        EmbeddingGenerator = embeddingGenerator
+    });
+
+await collection.EnsureCollectionExistsAsync();
+
+// Add documents with automatic embedding
+var records = new List<SearchRecord>();
 foreach (var doc in documents)
 {
-    var embedding = await embeddingGenerator.GenerateEmbeddingAsync(doc.Text);
-    await collection.UpsertAsync(new Document
+    records.Add(new SearchRecord
     {
-        Id = doc.Id,
+        SourceId = doc.SourceId,
+        SourceName = doc.SourceName,
+        SourceLink = doc.SourceLink,
         Text = doc.Text,
-        Embedding = embedding.Vector
+        // Embedding is generated automatically
+        TextEmbedding = await embeddingGenerator.GenerateVectorAsync(doc.Text)
     });
 }
 
-// Create a search provider
-var searchProvider = new TextSearchProvider(collection, embeddingGenerator);
-
-// Agent automatically retrieves relevant context
-var agent = chatClient.CreateAIAgent(
-    instructions: "Answer questions using the provided context",
-    tools: [searchProvider]
-);
+await collection.UpsertAsync(records);
 ```
 
-**How it works:**
+### Integrating RAG with Your Agent
 
-1. Documents are converted to embeddings and stored in a vector database
-2. When a user asks a question, the agent searches for relevant documents
-3. Retrieved context is injected into the prompt
-4. The LLM answers based on both its training and the retrieved knowledge
+```csharp
+// Create a knowledge base wrapper
+var knowledgeBase = await RagKnowledgeBase.CreateAsync(
+    vectorStore,
+    embeddingGenerator);
+
+// Create text search provider
+var searchProvider = new TextSearchProvider(
+    async (query, ct) =>
+    {
+        return await knowledgeBase.SearchAsync(query, ct);
+    });
+
+// Agent automatically uses RAG when needed
+var agent = chatClient.CreateAIAgent(
+    instructions: """
+        You are a customer support assistant for BrightTrail Gear.
+        Use the knowledge base to answer questions accurately.
+        If you don't find relevant information, say so clearly.
+        """,
+    tools: [searchProvider],
+    name: "SupportAgent");
+
+// User asks a question
+var response = await agent.RunAsync(
+    "What's your return policy?",
+    thread);
+```
+
+**What Happens Under the Hood:**
+
+1. **User query arrives**: "What's your return policy?"
+2. **Query embedding**: The question is converted to a vector using the same embedding model
+3. **Similarity search**: The vector store finds the top 3 most similar documents using cosine similarity
+4. **Context injection**: Retrieved documents are automatically added to the LLM prompt:
+   ```
+   [System]: You are a customer support assistant...
+   [Context from knowledge base]:
+   - Returns are accepted within 30 days of delivery...
+   [User]: What's your return policy?
+   ```
+5. **LLM response**: The model answers based on the retrieved context
+
+**Vector Search Mechanics**
+
+The similarity search uses vector distance metrics (typically cosine similarity):
+
+```csharp
+public async Task<IEnumerable<TextSearchResult>> SearchAsync(
+    string query,
+    CancellationToken cancellationToken)
+{
+    var results = new List<TextSearchResult>();
+
+    // Search returns top N results ranked by similarity
+    await foreach (var r in _collection.SearchAsync(
+        query,
+        topResults: 3,
+        options: null,
+        cancellationToken: cancellationToken))
+    {
+        results.Add(new TextSearchResult
+        {
+            SourceName = r.Record.SourceName,
+            SourceLink = r.Record.SourceLink,
+            Text = r.Record.Text ?? string.Empty,
+            Score = r.Score  // Similarity score (0-1)
+        });
+    }
+
+    return results;
+}
+```
+
+**Production Considerations:**
+
+- **Embedding models**: Choose based on your domain (general vs. specialized)
+- **Vector dimensions**: Higher dimensions = more precise but slower and more storage
+- **Top-K results**: Balance between context richness and token costs
+- **Chunking strategy**: Break large documents into searchable chunks
+- **Hybrid search**: Combine vector search with keyword/full-text search
+- **Vector databases**: Use Azure AI Search, Pinecone, or Qdrant for scale
+
+**Real-World Use Cases:**
+
+- **Customer support**: Product docs, policies, FAQs
+- **Internal knowledge**: Company wikis, procedures, tribal knowledge
+- **Code assistance**: API documentation, code examples
+- **Compliance**: Regulations, legal documents, audit trails
 
 This pattern is essential for building agents that need to reference specific documentation, databases, or knowledge bases. For more on vector embeddings and similarity search, see [Azure OpenAI embeddings documentation](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/understand-embeddings).
 

@@ -419,35 +419,230 @@ This pattern allows:
 - **Late binding** — executors can read data written by earlier steps
 - **Observability** — final summaries can report on the entire flow
 
-## Events and Observability
+## Custom Events: Building Your Observability Story
 
-Each executor emits custom events for tracing and monitoring:
+One of the most powerful features of Agent Framework workflows is the custom events system. Events provide real-time insight into what's happening inside your workflow, making debugging and monitoring dramatically easier.
+
+### Creating Custom Events
+
+Custom events inherit from `WorkflowEvent` and can carry any data you need:
 
 ```csharp
-await context.AddEventAsync(new EmailPreprocessedEvent(email), cancellationToken);
-await context.AddEventAsync(new IntakeCompletedEvent(intakeContext), cancellationToken);
-await context.AddEventAsync(new PolicyAppliedEvent(policyContext), cancellationToken);
+internal sealed class EmailPreprocessedEvent(EmailDocument email) : WorkflowEvent(email)
+{
+    public EmailDocument Email { get; } = email;
+}
+
+internal sealed class IntakeCompletedEvent(IntakeContext context) : WorkflowEvent(context)
+{
+    public IntakeContext Context { get; } = context;
+}
+
+internal sealed class PolicyAppliedEvent(PolicyContext context) : WorkflowEvent(context)
+{
+    public PolicyContext Context { get; } = context;
+}
 ```
 
-The workflow also integrates with OpenTelemetry for distributed tracing:
+These events are simple data carriers, but they transform how you observe workflow execution.
+
+### Emitting Events from Executors
+
+Inside any executor, you emit events through the workflow context:
+
+```csharp
+public override async ValueTask<EmailDocument> HandleAsync(
+    string message,
+    IWorkflowContext context,
+    CancellationToken cancellationToken = default)
+{
+    // ... process the email ...
+
+    var email = new EmailDocument
+    {
+        OriginalText = message,
+        CleanText = body,
+        ModelSafeText = modelSafe,
+        ContainsPii = containsPii,
+        // ... other properties
+    };
+
+    // Emit the event
+    await context.AddEventAsync(new EmailPreprocessedEvent(email), cancellationToken);
+
+    return email;
+}
+```
+
+Events are emitted **in real-time** as the workflow executes, allowing you to observe progress as it happens.
+
+### Consuming Events: Real-Time Workflow Monitoring
+
+Here's where it gets interesting. When you run a workflow, you can watch the event stream:
+
+```csharp
+await using StreamingRun run = await InProcessExecution.StreamAsync(workflow, input: email);
+
+await foreach (var evt in run.WatchStreamAsync())
+{
+    switch (evt)
+    {
+        case EmailPreprocessedEvent e:
+            Console.WriteLine(
+                $"[Preprocess|Deterministic] Subject='{e.Email.Subject}' | " +
+                $"PII={e.Email.ContainsPii} | OrderIds={e.Email.DetectedOrderIds.Count}");
+            break;
+
+        case IntakeCompletedEvent e:
+            Console.WriteLine(
+                $"[Intake|Agent] {e.Context.Intake.Category} | " +
+                $"{e.Context.Intake.Urgency} | {e.Context.Intake.Sentiment}");
+            Console.WriteLine($"  Summary: {e.Context.Intake.Summary}");
+            break;
+
+        case PolicyAppliedEvent e:
+            Console.WriteLine(
+                $"[Policy|Deterministic] Mode={e.Context.Policy.Mode} | " +
+                $"SLA={e.Context.Policy.Sla}");
+            break;
+
+        case ResponseDraftedEvent e:
+            Console.WriteLine(
+                $"[Responder|Agent] Generated {e.Info.Mode} response");
+            break;
+
+        case HumanHandoffPreparedEvent e:
+            Console.WriteLine(
+                $"[Human Prep|Hybrid] Queue='{e.Package.Queue}' | " +
+                $"SLA={e.Package.Sla}");
+            Console.WriteLine($"  Summary: {e.Package.Summary}");
+            break;
+
+        case RefundRequestCreatedEvent e:
+            Console.WriteLine(
+                $"[Refund|Deterministic] Id={e.Request.RefundRequestId}");
+            break;
+
+        case WorkflowOutputEvent outputEvent:
+            Console.WriteLine("=== Workflow Output ===");
+            Console.WriteLine(outputEvent.Data);
+            break;
+
+        case WorkflowErrorEvent errorEvent:
+            Console.WriteLine($"ERROR: {errorEvent}");
+            break;
+    }
+}
+```
+
+**What makes this powerful:**
+
+1. **Real-time visibility**: You see exactly what's happening as the workflow executes
+2. **Type-safe pattern matching**: Each event type can be handled differently
+3. **Rich context**: Events carry the full data from each step
+4. **Built-in events**: `WorkflowOutputEvent` and `WorkflowErrorEvent` are provided automatically
+
+### Event-Driven Debugging
+
+When something goes wrong, events tell the story:
+
+```
+[Preprocess|Deterministic] Subject='Request refund for order #12345' | PII=True | OrderIds=1
+[Intake|Agent] Billing | High | Negative | Refund
+  Summary: Customer is frustrated about delayed shipment and requesting full refund
+[Policy|Deterministic] Mode=DraftReply | SLA=4h
+  Selected route → Refund request (human review)
+[Refund|Deterministic] Id=REF-20231217-001
+[Human Inbox|Deterministic] Sent to human review queue
+```
+
+Instead of setting breakpoints and stepping through code, you have a narrative of exactly what happened and why.
+
+## OpenTelemetry Integration: Distributed Tracing
+
+Beyond custom events, Agent Framework integrates with OpenTelemetry for production-grade observability.
+
+### Setting Up OpenTelemetry
 
 ```csharp
 var tracerProvider = Sdk.CreateTracerProviderBuilder()
-    .SetResourceBuilder(ResourceBuilder.CreateDefault().AddService("AgentFrameworkWorkflows"))
+    .SetResourceBuilder(
+        ResourceBuilder.CreateDefault()
+            .AddService("AgentFrameworkWorkflows"))
     .AddSource("Microsoft.Agents.AI.*")
+    .SetSampler(new AlwaysOnSampler())
     .AddOtlpExporter(options =>
     {
         options.Endpoint = new Uri("http://localhost:4319");
+        options.Protocol = OtlpExportProtocol.Grpc;
     })
     .Build();
 ```
 
-This gives you:
+This configuration:
 
-- **Visibility** into which executors ran and in what order
-- **Performance metrics** for each step
-- **Debugging context** when issues occur
-- **Production monitoring** through standard observability tools
+1. **Identifies your service** (`AgentFrameworkWorkflows`)
+2. **Captures Agent Framework traces** (`Microsoft.Agents.AI.*`)
+3. **Samples all traces** (use selective sampling in production)
+4. **Exports via OTLP** to your observability backend (Jaeger, Zipkin, Azure Monitor, etc.)
+
+### What Gets Traced
+
+OpenTelemetry automatically captures:
+
+- **Executor execution times**: How long each step takes
+- **Agent LLM calls**: Token counts, latencies, model calls
+- **State operations**: Reads and writes to shared state
+- **Edge transitions**: Which conditional paths were taken
+- **Error contexts**: Stack traces with workflow context
+
+### Visualizing Workflows with AI Foundry
+
+Here's where it gets really powerful. The **Azure AI Foundry VS Code extension** can visualize your workflow execution using OpenTelemetry traces.
+
+When you run a workflow with OpenTelemetry enabled:
+
+1. The extension captures the trace data
+2. It builds a **visual flow diagram** showing:
+   - Which executors ran
+   - How long each took
+   - What data flowed between them
+   - Where conditional branches were taken
+3. You can **click on any executor** to see:
+   - Input and output data
+   - Custom events emitted
+   - LLM prompts and responses (for agent executors)
+   - Performance metrics
+
+This visualization transforms debugging from "what happened?" to a visual story you can navigate interactively.
+
+**Setting up visualization:**
+
+1. Install the **Azure AI Foundry extension** in VS Code
+2. Configure OTLP endpoint (default `http://localhost:4319`)
+3. Run your workflow with OpenTelemetry enabled
+4. Open the Foundry extension panel to see the live trace
+
+The extension shows your workflow graph in real-time, highlighting the active executor as it runs and showing the complete path when finished.
+
+### Production Observability
+
+In production, this same infrastructure feeds standard observability tools:
+
+- **Azure Monitor**: Native integration with Application Insights
+- **Jaeger**: Open-source distributed tracing
+- **Zipkin**: Lightweight tracing visualization
+- **Datadog/New Relic**: Commercial APM platforms
+
+All support OTLP, so you can monitor workflows alongside the rest of your infrastructure.
+
+**Key metrics to track:**
+
+- Executor execution times (identify bottlenecks)
+- Agent token consumption (control costs)
+- Conditional routing patterns (understand user behavior)
+- Error rates by executor type (target improvements)
+- End-to-end workflow latency (SLA monitoring)
 
 ## Running the Demo
 
