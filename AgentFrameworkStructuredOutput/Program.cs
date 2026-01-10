@@ -4,7 +4,7 @@ using System.Reflection;
 using System.Text.Json.Serialization;
 using Azure;
 using Azure.AI.OpenAI;
-using OpenAI;
+using OpenAI.Chat;
 
 #pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 #pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
