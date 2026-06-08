@@ -37,7 +37,7 @@ catch (Exception)
 var storageDirectory = Path.Combine(Environment.CurrentDirectory, "ThreadStorage");
 var threadStore = new FileThreadStore(storageDirectory);
 
-AgentThread thread;
+AgentSession thread;
 if (threadStore.Exists)
 {
     Console.ForegroundColor = ConsoleColor.Green;
@@ -45,10 +45,10 @@ if (threadStore.Exists)
     Console.ResetColor();
 
     // Load and deserialize the thread
-    thread = threadStore.Load(serializedThread => agent.DeserializeThread(serializedThread));
+    thread = await threadStore.LoadAsync(serializedThread => agent.DeserializeSessionAsync(serializedThread));
 
     // Display historical messages
-    await DisplayHistoricalMessagesAsync(aiProjectClient, thread);
+    await DisplayHistoricalMessagesAsync(aiProjectClient, agent, thread);
 }
 else
 {
@@ -57,7 +57,7 @@ else
     Console.ResetColor();
 
     // Create a new thread
-    thread = agent.GetNewThread();
+    thread = await agent.CreateSessionAsync();
 }
 
 do
@@ -81,7 +81,7 @@ do
         threadStore.Delete();
 
         // Create new thread
-        thread = agent.GetNewThread();
+        thread = await agent.CreateSessionAsync();
 
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("✓ Thread cleared successfully!\n");
@@ -102,16 +102,16 @@ do
     Console.WriteLine();
 
     // Save thread state after each interaction
-    threadStore.Save(thread);
+    await threadStore.SaveAsync(thread, session => agent.SerializeSessionAsync(session));
 
 } while (true);
 
-static async Task DisplayHistoricalMessagesAsync(PersistentAgentsClient client, AgentThread thread)
+static async Task DisplayHistoricalMessagesAsync(PersistentAgentsClient client, ChatClientAgent agent, AgentSession thread)
 {
     try
     {
         // Get the thread ID from the serialized state
-        var serializedThread = thread.Serialize();
+        var serializedThread = await agent.SerializeSessionAsync(thread);
         if (serializedThread.TryGetProperty("conversationId", out var threadIdElement))
         {
             var threadId = threadIdElement.GetString();

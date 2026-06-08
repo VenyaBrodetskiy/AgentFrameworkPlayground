@@ -45,12 +45,15 @@ Console.WriteLine(meetingTranscript);
 Console.ResetColor();
 
 // Create the ChatClientAgent with the specified name and instructions
-var agent = chatClient.CreateAIAgent(
+var agent = chatClient.AsAIAgent(
     name: "MeetingAnalyzer",
     instructions: "You are an assistant that extracts structured information from meeting transcripts.");
 
+var thread = await agent.CreateSessionAsync();
+
 var response = await agent.RunAsync<MeetingAnalysis>(
-    $"Please analyze this meeting transcript and extract key information:\n\n{meetingTranscript}");
+    $"Please analyze this meeting transcript and extract key information:\n\n{meetingTranscript}",
+    thread);
 
 Console.ForegroundColor = ConsoleColor.Cyan;
 Console.WriteLine("\n=== Structured Output (JSON) ===");

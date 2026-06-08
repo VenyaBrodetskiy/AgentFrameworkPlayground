@@ -3,12 +3,11 @@ using System.Reflection;
 using Azure;
 using Azure.AI.OpenAI;
 using Microsoft.Agents.AI;
-using Microsoft.Agents.AI.Data;
 using Microsoft.Extensions.VectorData;
 using Microsoft.SemanticKernel.Connectors.InMemory;
 using Microsoft.Extensions.AI;
 using Common;
-using OpenAI;
+using OpenAI.Chat;
 
 #pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 #pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
@@ -49,17 +48,17 @@ TextSearchProviderOptions textSearchOptions = new()
 
 var agent = azureOpenAiClient
     .GetChatClient(modelName)
-    .CreateAIAgent(new ChatClientAgentOptions
+    .AsAIAgent(new ChatClientAgentOptions
     {
         Name = "myagent",
         ChatOptions = new ChatOptions
         {
             Instructions = "Say 'just a second' before answering."
         },
-        AIContextProviderFactory = ctx => new TextSearchProvider(searchAdapter, ctx.SerializedState, ctx.JsonSerializerOptions, textSearchOptions)
+        AIContextProviders = [new TextSearchProvider(searchAdapter, textSearchOptions)]
     });
 
-var thread = agent.GetNewThread();
+var thread = await agent.CreateSessionAsync();
 
 do
 {

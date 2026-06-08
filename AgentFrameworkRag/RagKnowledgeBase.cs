@@ -1,4 +1,4 @@
-using Microsoft.Agents.AI.Data;
+using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.VectorData;
 

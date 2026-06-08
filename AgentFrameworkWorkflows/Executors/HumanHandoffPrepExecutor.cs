@@ -14,7 +14,7 @@ namespace AgentFrameworkWorkflows.Executors;
 internal sealed class HumanHandoffPrepExecutor : Executor<PolicyContext, HumanHandoffPackage>
 {
     private readonly AIAgent _agent;
-    private readonly AgentThread _thread;
+    private readonly AgentSession _thread;
 
     public HumanHandoffPrepExecutor(string id, IChatClient chatClient) : base(id)
     {
@@ -34,7 +34,7 @@ internal sealed class HumanHandoffPrepExecutor : Executor<PolicyContext, HumanHa
         };
 
         _agent = new ChatClientAgent(chatClient, agentOptions);
-        _thread = _agent.GetNewThread();
+        _thread = _agent.CreateSessionAsync().AsTask().GetAwaiter().GetResult();
     }
 
     public override async ValueTask<HumanHandoffPackage> HandleAsync(PolicyContext message, IWorkflowContext context, CancellationToken cancellationToken = default)

@@ -4,7 +4,7 @@ using Microsoft.Agents.AI;
 namespace AgentFrameworkFoundryAgent;
 
 /// <summary>
-/// Persists an <see cref="AgentThread"/> to a JSON file and restores it via a supplied deserializer.
+/// Persists an <see cref="AgentSession"/> to a JSON file and restores it via a supplied deserializer.
 /// </summary>
 internal sealed class FileThreadStore
 {
@@ -30,20 +30,21 @@ internal sealed class FileThreadStore
 
     public string StorageDirectory => Path.GetDirectoryName(_threadStatePath)!;
 
-    public AgentThread Load(Func<JsonElement, AgentThread> deserializeThread)
+    public async ValueTask<AgentSession> LoadAsync(Func<JsonElement, ValueTask<AgentSession>> deserializeThread)
     {
         ArgumentNullException.ThrowIfNull(deserializeThread);
 
         var threadStateJson = File.ReadAllText(_threadStatePath);
         var serializedThread = JsonSerializer.Deserialize<JsonElement>(threadStateJson);
-        return deserializeThread(serializedThread);
+        return await deserializeThread(serializedThread);
     }
 
-    public void Save(AgentThread thread)
+    public async ValueTask SaveAsync(AgentSession thread, Func<AgentSession, ValueTask<JsonElement>> serializeThread)
     {
         ArgumentNullException.ThrowIfNull(thread);
+        ArgumentNullException.ThrowIfNull(serializeThread);
 
-        var serializedThread = thread.Serialize();
+        var serializedThread = await serializeThread(thread);
         var threadStateJson = JsonSerializer.Serialize(serializedThread, _jsonSerializerOptions);
         File.WriteAllText(_threadStatePath, threadStateJson);
     }

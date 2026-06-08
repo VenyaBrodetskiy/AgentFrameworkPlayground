@@ -6,65 +6,83 @@ using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 namespace AgentFrameworkThreadPersistancy;
 
 /// <summary>
-/// A file-based implementation of ChatMessageStore that persists chat messages to disk.
+/// A file-based chat history provider that persists chat messages to disk.
 /// </summary>
-internal sealed class FileChatMessageStore : ChatMessageStore
+internal sealed class FileChatMessageStore : ChatHistoryProvider
 {
     private const string ThreadIdPrefix = "thread";
-    private readonly string _threadId;
-    private readonly string _messagesFilePath;
+    private const string StateKey = "file-chat-message-store-thread-id";
+    private static readonly JsonSerializerOptions StateJsonSerializerOptions = new();
 
-    public FileChatMessageStore(JsonElement serializedStoreState)
+    public FileChatMessageStore()
+        : base(
+            provideOutputMessageFilter: messages => messages,
+            storeInputRequestMessageFilter: messages => messages,
+            storeInputResponseMessageFilter: messages => messages)
     {
-        _threadId = ReadOrCreateThreadId(serializedStoreState);
-
-        // Hardcoded storage location in bin folder
         var storageDirectory = Path.Combine(Environment.CurrentDirectory, "ThreadStorage");
         Directory.CreateDirectory(storageDirectory);
-        
-        _messagesFilePath = Path.Combine(storageDirectory, $"{_threadId}.json");
     }
 
-    public override async Task AddMessagesAsync(IEnumerable<ChatMessage> messages, CancellationToken cancellationToken = default)
+    public override IReadOnlyList<string> StateKeys => [StateKey];
+
+    public async Task<IEnumerable<ChatMessage>> GetMessagesAsync(AgentSession session, CancellationToken cancellationToken = default)
     {
-        // Load existing messages
-        var allMessages = (await GetMessagesAsync(cancellationToken)).ToList();
-
-        // Add new messages
-        allMessages.AddRange(messages);
-
-        // Save all messages to file
-        var json = JsonSerializer.Serialize(allMessages, new JsonSerializerOptions { WriteIndented = true });
-        await File.WriteAllTextAsync(_messagesFilePath, json, cancellationToken);
-    }
-
-    public override async Task<IEnumerable<ChatMessage>> GetMessagesAsync(CancellationToken cancellationToken = default)
-    {
-        if (!File.Exists(_messagesFilePath))
+        var messagesFilePath = GetMessagesFilePath(session);
+        if (!File.Exists(messagesFilePath))
         {
             return [];
         }
 
-        var json = await File.ReadAllTextAsync(_messagesFilePath, cancellationToken);
+        var json = await File.ReadAllTextAsync(messagesFilePath, cancellationToken);
         return JsonSerializer.Deserialize<List<ChatMessage>>(json) ?? [];
     }
 
-    public override JsonElement Serialize(JsonSerializerOptions? jsonSerializerOptions = null) =>
-        JsonSerializer.SerializeToElement(_threadId);
-
-    private static string ReadOrCreateThreadId(JsonElement serializedStoreState)
+    protected override async ValueTask<IEnumerable<ChatMessage>> ProvideChatHistoryAsync(InvokingContext context, CancellationToken cancellationToken)
     {
-        var fromState = serializedStoreState.ValueKind == JsonValueKind.String
-            ? serializedStoreState.GetString()
-            : null;
+        var session = context.Session ?? throw new InvalidOperationException("Agent session was not provided.");
+        return await GetMessagesAsync(session, cancellationToken);
+    }
 
-        if (!string.IsNullOrWhiteSpace(fromState))
+    protected override async ValueTask StoreChatHistoryAsync(InvokedContext context, CancellationToken cancellationToken)
+    {
+        var session = context.Session ?? throw new InvalidOperationException("Agent session was not provided.");
+        var messages = (await GetMessagesAsync(session, cancellationToken)).ToList();
+        messages.AddRange(context.RequestMessages ?? []);
+        messages.AddRange(context.ResponseMessages ?? []);
+
+        await SaveMessagesAsync(session, messages, cancellationToken);
+    }
+
+    private async Task SaveMessagesAsync(AgentSession session, IEnumerable<ChatMessage> messages, CancellationToken cancellationToken)
+    {
+        var messagesFilePath = GetMessagesFilePath(session);
+        var json = JsonSerializer.Serialize(messages, new JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(messagesFilePath, json, cancellationToken);
+    }
+
+    private static string GetMessagesFilePath(AgentSession session)
+    {
+        var threadId = GetOrCreateThreadId(session);
+
+        // Hardcoded storage location in bin folder
+        var storageDirectory = Path.Combine(Environment.CurrentDirectory, "ThreadStorage");
+        Directory.CreateDirectory(storageDirectory);
+
+        return Path.Combine(storageDirectory, $"{threadId}.json");
+    }
+
+    private static string GetOrCreateThreadId(AgentSession session)
+    {
+        if (session.StateBag.TryGetValue<string>(StateKey, out var threadId, StateJsonSerializerOptions) &&
+            !string.IsNullOrWhiteSpace(threadId))
         {
-            return SanitizeFileName(fromState);
+            return SanitizeFileName(threadId);
         }
 
-        // New thread: generate a stable id that will be persisted via Serialize() into thread state.
-        return $"{ThreadIdPrefix}-{Guid.NewGuid():N}";
+        threadId = $"{ThreadIdPrefix}-{Guid.NewGuid():N}";
+        session.StateBag.SetValue(StateKey, threadId, StateJsonSerializerOptions);
+        return threadId;
     }
 
     private static string SanitizeFileName(string value)

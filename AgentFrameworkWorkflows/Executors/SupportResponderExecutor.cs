@@ -13,7 +13,7 @@ namespace AgentFrameworkWorkflows.Executors;
 internal sealed class SupportResponderExecutor : Executor<PolicyContext, FinalSignal>
 {
     private readonly AIAgent _agent;
-    private readonly AgentThread _thread;
+    private readonly AgentSession _thread;
     private readonly string _executorId;
 
     public SupportResponderExecutor(string id, IChatClient chatClient) : base(id)
@@ -36,7 +36,7 @@ internal sealed class SupportResponderExecutor : Executor<PolicyContext, FinalSi
         };
 
         _agent = new ChatClientAgent(chatClient, agentOptions);
-        _thread = _agent.GetNewThread();
+        _thread = _agent.CreateSessionAsync().AsTask().GetAwaiter().GetResult();
     }
 
     public override async ValueTask<FinalSignal> HandleAsync(PolicyContext message, IWorkflowContext context, CancellationToken cancellationToken = default)

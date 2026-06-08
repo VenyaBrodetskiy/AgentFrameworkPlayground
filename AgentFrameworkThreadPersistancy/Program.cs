@@ -4,8 +4,8 @@ using Azure;
 using Azure.AI.OpenAI;
 using Microsoft.Agents.AI;
 using Common;
-using OpenAI;
 using AgentFrameworkThreadPersistancy;
+using OpenAI.Chat;
 
 #pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 #pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
@@ -25,17 +25,19 @@ var agent = new AzureOpenAIClient(
         new Uri(endpoint),
         new AzureKeyCredential(apiKey))
     .GetChatClient(modelName)
-    .CreateAIAgent(new ChatClientAgentOptions
+    .AsAIAgent(new ChatClientAgentOptions
     {
         Name = "Assistant",
         ChatOptions = new() { Instructions = "You are a helpful assistant." },
-        ChatMessageStoreFactory = ctx => new FileChatMessageStore(ctx.SerializedState)
+        ChatHistoryProvider = new FileChatMessageStore()
     });
 
 var storageDirectory = Path.Combine(Environment.CurrentDirectory, "ThreadStorage");
 var threadStore = new FileThreadStore(storageDirectory);
+var messageStore = agent.ChatHistoryProvider as FileChatMessageStore
+    ?? throw new InvalidOperationException("File chat message store was not configured.");
 
-AgentThread thread;
+AgentSession thread;
 if (threadStore.Exists)
 {
     Console.ForegroundColor = ConsoleColor.Green;
@@ -43,10 +45,10 @@ if (threadStore.Exists)
     Console.ResetColor();
 
     // Load and deserialize the thread
-    thread = threadStore.Load(serializedThread => agent.DeserializeThread(serializedThread));
+    thread = await threadStore.LoadAsync(serializedThread => agent.DeserializeSessionAsync(serializedThread));
 
     // Display historical messages
-    await DisplayHistoricalMessagesAsync(thread);
+    await DisplayHistoricalMessagesAsync(messageStore, thread);
 }
 else
 {
@@ -55,7 +57,7 @@ else
     Console.ResetColor();
 
     // Create a new thread
-    thread = agent.GetNewThread();
+    thread = await agent.CreateSessionAsync();
 }
 
 do
@@ -85,7 +87,7 @@ do
         }
 
         // Create new thread
-        thread = agent.GetNewThread();
+        thread = await agent.CreateSessionAsync();
         
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("✓ Thread cleared successfully!\n");
@@ -105,17 +107,13 @@ do
     Console.WriteLine();
 
     // Save thread state after each interaction
-    threadStore.Save(thread);
+    await threadStore.SaveAsync(thread, session => agent.SerializeSessionAsync(session));
 
 } while (true);
 
-static async Task DisplayHistoricalMessagesAsync(AgentThread thread)
+static async Task DisplayHistoricalMessagesAsync(FileChatMessageStore messageStore, AgentSession thread)
 {
-    var messageStore = thread.GetService<FileChatMessageStore>();
-    if (messageStore == null)
-        return;
-
-    var messages = await messageStore.GetMessagesAsync();
+    var messages = await messageStore.GetMessagesAsync(thread);
     
     foreach (var message in messages)
     {

@@ -10,10 +10,11 @@ namespace AgentFrameworkWorkflows.Executors;
 /// </summary>
 internal sealed class HumanInboxExecutor(string id) : Executor(id)
 {
-    protected override RouteBuilder ConfigureRoutes(RouteBuilder routeBuilder) =>
-        routeBuilder
-            .AddHandler<HumanHandoffPackage, FinalSignal>(HandleHandoffAsync)
-            .AddHandler<RefundRequest, FinalSignal>(HandleRefundAsync);
+    protected override ProtocolBuilder ConfigureProtocol(ProtocolBuilder protocolBuilder) =>
+        protocolBuilder.ConfigureRoutes(routeBuilder =>
+            routeBuilder
+                .AddHandler<HumanHandoffPackage, FinalSignal>(HandleHandoffAsync)
+                .AddHandler<RefundRequest, FinalSignal>(HandleRefundAsync));
 
     private async ValueTask<FinalSignal> HandleHandoffAsync(HumanHandoffPackage handoff, IWorkflowContext context)
     {

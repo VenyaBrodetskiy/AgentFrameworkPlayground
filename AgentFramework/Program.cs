@@ -5,7 +5,7 @@ using Azure;
 using Azure.AI.OpenAI;
 using Microsoft.Extensions.AI;
 using Common;
-using OpenAI;
+using OpenAI.Chat;
 
 #pragma warning disable OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 #pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
@@ -33,12 +33,12 @@ var agent = new AzureOpenAIClient(
         new Uri(endpoint),
         new AzureKeyCredential(apiKey))
     .GetChatClient(modelName)
-    .CreateAIAgent(
+    .AsAIAgent(
         instructions: "say 'just a second' before answering question",
         tools: [weatherFunction],
         name: "myagent");
 
-var thread = agent.GetNewThread();
+var thread = await agent.CreateSessionAsync();
 
 do
 {

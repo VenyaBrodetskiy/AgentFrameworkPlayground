@@ -13,7 +13,7 @@ namespace AgentFrameworkWorkflows.Executors;
 internal sealed class EmailIntakeExecutor : Executor<EmailDocument, IntakeContext>
 {
     private readonly AIAgent _agent;
-    private readonly AgentThread _thread;
+    private readonly AgentSession _thread;
 
     public EmailIntakeExecutor(string id, IChatClient chatClient) : base(id)
     {
@@ -33,7 +33,7 @@ internal sealed class EmailIntakeExecutor : Executor<EmailDocument, IntakeContex
         };
 
         _agent = new ChatClientAgent(chatClient, agentOptions);
-        _thread = _agent.GetNewThread();
+        _thread = _agent.CreateSessionAsync().AsTask().GetAwaiter().GetResult();
     }
 
     public override async ValueTask<IntakeContext> HandleAsync(EmailDocument message, IWorkflowContext context, CancellationToken cancellationToken = default)

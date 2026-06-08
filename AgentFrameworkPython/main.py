@@ -2,13 +2,13 @@ import asyncio
 from pathlib import Path
 from typing import Annotated, Any
 
-from agent_framework import ai_function
-from agent_framework.azure import AzureOpenAIChatClient
+from agent_framework import tool
+from agent_framework_openai import OpenAIChatCompletionClient
 from pydantic import Field
 
 from config_helpers import load_json, require_str, resolve_appsettings_paths
 
-@ai_function(name="get_weather", description="Get the weather for a given location.")
+@tool(name="get_weather", description="Get the weather for a given location.")
 def get_weather(
     location: Annotated[str, Field(description="The location to get the weather for.")],
 ) -> str:
@@ -30,19 +30,19 @@ async def main() -> None:
     endpoint = require_str(config, "Endpoint")
     api_key = require_str(config, "ApiKey")
 
-    client = AzureOpenAIChatClient(
-        endpoint=endpoint,
-        deployment_name=model_name,
+    client = OpenAIChatCompletionClient(
+        model=model_name,
+        azure_endpoint=endpoint,
         api_key=api_key,
     )
 
-    agent = client.create_agent(
+    agent = client.as_agent(
         instructions="say 'just a second' before answering question",
         tools=[get_weather],
         name="myagent",
     )
 
-    thread = agent.get_new_thread()
+    thread = agent.create_session()
 
     while True:
         try:
@@ -55,7 +55,7 @@ async def main() -> None:
             continue
 
         print("agent> ", end="", flush=True)
-        async for update in agent.run_stream(user_input, thread=thread):
+        async for update in agent.run(user_input, stream=True, session=thread):
             if update.text:
                 print(update.text, end="", flush=True)
         print()

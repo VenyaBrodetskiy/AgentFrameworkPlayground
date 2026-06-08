@@ -111,7 +111,7 @@ foreach (var (title, email) in SampleEmails.Examples)
 
     ConsoleUi.WriteSectionTitle("Workflow log (reasoning)", ConsoleColor.DarkGray);
 
-    await using StreamingRun run = await InProcessExecution.StreamAsync(workflow, input: email);
+    await using StreamingRun run = await InProcessExecution.RunStreamingAsync(workflow, email);
 
     await foreach (var evt in run.WatchStreamAsync())
     {
