@@ -126,7 +126,7 @@ foreach (var (title, email) in SampleEmails.Examples)
 
             case IntakeCompletedEvent e:
                 ConsoleUi.WriteColoredLine(
-                    $"\n[Intake|Agent] {e.Context.Intake.Category} | {e.Context.Intake.Urgency} | {e.Context.Intake.Sentiment} | {e.Context.Intake.Intent} | Missing={e.Context.Intake.MissingInformation.Count}",
+                    $"\n[Intake|Agent] Category={e.Context.Intake.Category} | Urgency={e.Context.Intake.Urgency} | Sentiment={e.Context.Intake.Sentiment} | Intent={e.Context.Intake.Intent} | Missing={e.Context.Intake.MissingInformation.Count}",
                     ConsoleColor.Yellow);
                 Console.WriteLine($"  Summary: {e.Context.Intake.Summary}");
                 if (e.Context.Intake.MissingInformation.Count > 0)
