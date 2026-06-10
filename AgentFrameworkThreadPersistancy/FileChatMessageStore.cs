@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization.Metadata;
 using Microsoft.Agents.AI;
 using ChatMessage = Microsoft.Extensions.AI.ChatMessage;
 
@@ -12,13 +13,12 @@ internal sealed class FileChatMessageStore : ChatHistoryProvider
 {
     private const string ThreadIdPrefix = "thread";
     private const string StateKey = "file-chat-message-store-thread-id";
-    private static readonly JsonSerializerOptions StateJsonSerializerOptions = new();
+    private static readonly JsonSerializerOptions StateJsonSerializerOptions = new()
+    {
+        TypeInfoResolver = new DefaultJsonTypeInfoResolver()
+    };
 
     public FileChatMessageStore()
-        : base(
-            provideOutputMessageFilter: messages => messages,
-            storeInputRequestMessageFilter: messages => messages,
-            storeInputResponseMessageFilter: messages => messages)
     {
         var storageDirectory = Path.Combine(Environment.CurrentDirectory, "ThreadStorage");
         Directory.CreateDirectory(storageDirectory);

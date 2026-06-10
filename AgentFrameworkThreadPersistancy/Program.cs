@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.AI;
+using System.ComponentModel;
 using System.Reflection;
 using Azure;
 using Azure.AI.OpenAI;
@@ -21,6 +23,12 @@ var modelName = configuration["ModelName"] ?? throw new ApplicationException("Mo
 var endpoint = configuration["Endpoint"] ?? throw new ApplicationException("Endpoint not found");
 var apiKey = configuration["ApiKey"] ?? throw new ApplicationException("ApiKey not found");
 
+[Description("Get the weather for a given location.")]
+static string GetWeather([Description("The location to get the weather for.")] string location)
+    => $"The weather in {location} is cloudy with a high of 15°C.";
+
+var weatherFunction = AIFunctionFactory.Create(GetWeather);
+
 var agent = new AzureOpenAIClient(
         new Uri(endpoint),
         new AzureKeyCredential(apiKey))
@@ -28,7 +36,11 @@ var agent = new AzureOpenAIClient(
     .AsAIAgent(new ChatClientAgentOptions
     {
         Name = "Assistant",
-        ChatOptions = new() { Instructions = "You are a helpful assistant." },
+        ChatOptions = new()
+        {
+            Instructions = "You are a helpful assistant.",
+            Tools = [weatherFunction]
+        },
         ChatHistoryProvider = new FileChatMessageStore()
     });
 
@@ -65,6 +77,9 @@ do
     ConsoleUi.WriteUserPrompt();
     var userInput = Console.ReadLine();
 
+    if (userInput is null)
+        break;
+
     if (string.IsNullOrWhiteSpace(userInput))
         continue;
 
@@ -95,6 +110,9 @@ do
         
         continue;
     }
+
+    if (userInput.Trim().Equals("/exit", StringComparison.OrdinalIgnoreCase))
+        break;
 
     var streamingResponse = agent.RunStreamingAsync(userInput, thread);
 
