@@ -124,6 +124,8 @@ do
     }
     Console.WriteLine();
 
+    // var history = (await messageStore.GetMessagesAsync(thread)).ToList();
+
     // Save thread state after each interaction
     await threadStore.SaveAsync(thread, session => agent.SerializeSessionAsync(session));
 
