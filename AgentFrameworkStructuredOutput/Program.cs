@@ -44,21 +44,51 @@ Console.ForegroundColor = ConsoleColor.Yellow;
 Console.WriteLine(meetingTranscript);
 Console.ResetColor();
 
-// Create the ChatClientAgent with the specified name and instructions
-var agent = chatClient.AsAIAgent(
-    name: "MeetingAnalyzer",
-    instructions: "You are an assistant that extracts structured information from meeting transcripts.");
+// Bad example: the prompt repeats the output keys instead of giving meaningful analysis guidance.
+var badPrompt = $"""
+Please analyze this meeting transcript and return JSON with exactly these keys:
+- date: the date of the meeting
+- duration_minutes: meeting length in minutes
+- attendees: list of people in the meeting
+- decisions: list of decisions made in the meeting
+- action_items: list of objects with assignee, task, and due_date
 
-var thread = await agent.CreateSessionAsync();
+Meeting transcript:
+{meetingTranscript}
+""";
 
-var response = await agent.RunAsync<MeetingAnalysis>(
-    $"Please analyze this meeting transcript and extract key information:\n\n{meetingTranscript}",
-    thread);
+var badPromptAgent = chatClient.AsAIAgent(name: "BadPromptMeetingAnalyzer");
+var badPromptThread = await badPromptAgent.CreateSessionAsync();
+var badPromptResponse = await badPromptAgent.RunAsync<MeetingAnalysis>(
+    badPrompt,
+    badPromptThread);
 
 Console.ForegroundColor = ConsoleColor.Cyan;
-Console.WriteLine("\n=== Structured Output (JSON) ===");
+Console.WriteLine("\n=== Example 1: Bad Prompt (Manual Keys In Prompt) ===");
 Console.ResetColor();
-Console.WriteLine(response.Result.Dump());
+Console.WriteLine(badPrompt);
+
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("\n=== Example 1: Structured Output (JSON) ===");
+Console.ResetColor();
+Console.WriteLine(badPromptResponse.Result.Dump());
+
+// Better example: the schema from MeetingAnalysis tells the model what shape to return.
+var schemaOnlyAgent = chatClient.AsAIAgent(name: "SchemaOnlyMeetingAnalyzer");
+var schemaOnlyThread = await schemaOnlyAgent.CreateSessionAsync();
+var schemaOnlyResponse = await schemaOnlyAgent.RunAsync<MeetingAnalysis>(
+    meetingTranscript,
+    schemaOnlyThread);
+
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("\n=== Example 2: Schema Only (Transcript As Input) ===");
+Console.ResetColor();
+Console.WriteLine("Prompt sent to the model: only the raw meeting transcript.");
+
+Console.ForegroundColor = ConsoleColor.Cyan;
+Console.WriteLine("\n=== Example 2: Structured Output (JSON) ===");
+Console.ResetColor();
+Console.WriteLine(schemaOnlyResponse.Result.Dump());
 
 #pragma warning restore OPENAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 #pragma warning restore MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
