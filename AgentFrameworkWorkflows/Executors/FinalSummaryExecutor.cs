@@ -8,6 +8,7 @@ namespace AgentFrameworkWorkflows.Executors;
 /// Deterministic: reads shared state to produce a single, consolidated output.
 /// This keeps Program.cs simple and makes the workflow graph "self-reporting".
 /// </summary>
+[YieldsOutput(typeof(string))]
 internal sealed class FinalSummaryExecutor(string id) : Executor<FinalSignal>(id)
 {
     public override async ValueTask HandleAsync(FinalSignal message, IWorkflowContext context, CancellationToken cancellationToken = default)

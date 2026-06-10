@@ -13,7 +13,7 @@
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.9.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.8" />
-    <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.6.0" />
+    <PackageReference Include="Microsoft.Extensions.VectorData.Abstractions" Version="10.1.0" />
     <PackageReference Include="Microsoft.SemanticKernel.Connectors.InMemory" Version="1.74.0-preview" />
   </ItemGroup>
 
