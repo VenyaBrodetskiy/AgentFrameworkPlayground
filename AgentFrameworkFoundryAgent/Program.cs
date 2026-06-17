@@ -1,10 +1,14 @@
-using AgentFrameworkFoundryAgent;
-using Azure.AI.Agents.Persistent;
+using Microsoft.Extensions.Configuration;
+using System.ClientModel;
+using System.Reflection;
+using System.Text.Json;
+using Azure.AI.Projects;
+using Azure.AI.Projects.Agents;
 using Azure.Identity;
 using Common;
 using Microsoft.Agents.AI;
-using Microsoft.Extensions.Configuration;
-using System.Reflection;
+using Microsoft.Agents.AI.Foundry;
+using AgentFrameworkFoundryAgent;
 
 #pragma warning disable MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
 
@@ -17,48 +21,49 @@ var configuration = new ConfigurationBuilder()
 
 var modelName = configuration["ModelName"] ?? throw new ApplicationException("ModelName not found");
 var projectEndpoint = configuration["ProjectEndpoint"] ?? throw new ApplicationException("Endpoint not found");
+var agentName = configuration["AgentName"] ?? "pirate-prompt-agent";
+const string agentInstructions = "Answer like a friendly pirate. Keep responses helpful, concise, and clear.";
 
-PersistentAgentsClient aiProjectClient = new(projectEndpoint, new AzureCliCredential());
+AIProjectClient aiProjectClient = new(new Uri(projectEndpoint), new AzureCliCredential());
 
-ChatClientAgent agent;
-const string agentId = "asst_V9o17V41ZiFYrUYVd4qLAY3K";
-try
-{
-    agent = await aiProjectClient.GetAIAgentAsync(agentId);
-}
-catch (Exception)
-{
-    agent = await aiProjectClient.CreateAIAgentAsync(
-        model: modelName,
-        instructions: "say 'just a second' before answering question",
-        name: "myagent");
-}
+ProjectsAgentRecord agentRecord = await GetOrCreateAgentAsync(aiProjectClient, agentName, modelName, agentInstructions);
+FoundryAgent agent = aiProjectClient.AsAIAgent(agentRecord);
 
 var storageDirectory = Path.Combine(Environment.CurrentDirectory, "ThreadStorage");
-var threadStore = new FileThreadStore(storageDirectory);
+var conversationStore = new FileConversationStore(storageDirectory);
 
 AgentSession thread;
-if (threadStore.Exists)
+string conversationId;
+if (conversationStore.TryLoadConversationId(out conversationId) &&
+    conversationId.StartsWith("conv_", StringComparison.Ordinal))
 {
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("\n✓ Found saved thread. Resuming conversation...\n");
+    Console.WriteLine("\n✓ Found saved Foundry conversation. Resuming conversation...\n");
     Console.ResetColor();
 
-    // Load and deserialize the thread
-    thread = await threadStore.LoadAsync(serializedThread => agent.DeserializeSessionAsync(serializedThread));
-
-    // Display historical messages
-    await DisplayHistoricalMessagesAsync(aiProjectClient, agent, thread);
+    thread = await agent.CreateSessionAsync(conversationId);
 }
 else
 {
+    if (conversationStore.Exists)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine("\nFound saved local or legacy thread state. Starting a fresh Foundry conversation...\n");
+        Console.ResetColor();
+
+        conversationStore.Delete();
+    }
+
     Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine("\n→ No saved thread found. Starting new conversation.\n");
+    Console.WriteLine("\n→ No saved Foundry conversation found. Starting new conversation.\n");
     Console.ResetColor();
 
-    // Create a new thread
-    thread = await agent.CreateSessionAsync();
+    thread = await agent.CreateConversationSessionAsync();
+    conversationId = await GetConversationIdAsync(agent, thread);
+    conversationStore.Save(conversationId);
 }
+
+Console.WriteLine($"[foundry-conversation] {conversationId}\n");
 
 do
 {
@@ -66,25 +71,27 @@ do
 
     var userInput = Console.ReadLine();
 
+    if (userInput is null)
+        break;
+
     if (string.IsNullOrWhiteSpace(userInput))
         continue;
 
-    // Check for clear/reset commands
     if (userInput.Trim().Equals("/clear", StringComparison.OrdinalIgnoreCase) ||
         userInput.Trim().Equals("/reset", StringComparison.OrdinalIgnoreCase))
     {
         Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("\n⚠ Clearing thread and starting fresh conversation...\n");
+        Console.WriteLine("\n⚠ Clearing local conversation pointer and starting a fresh Foundry conversation...\n");
         Console.ResetColor();
 
-        // Delete local thread storage
-        threadStore.Delete();
+        conversationStore.Delete();
 
-        // Create new thread
-        thread = await agent.CreateSessionAsync();
+        thread = await agent.CreateConversationSessionAsync();
+        conversationId = await GetConversationIdAsync(agent, thread);
+        conversationStore.Save(conversationId);
 
         Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("✓ Thread cleared successfully!\n");
+        Console.WriteLine($"✓ New Foundry conversation started: {conversationId}\n");
         Console.ResetColor();
 
         continue;
@@ -101,60 +108,44 @@ do
     }
     Console.WriteLine();
 
-    // Save thread state after each interaction
-    await threadStore.SaveAsync(thread, session => agent.SerializeSessionAsync(session));
-
 } while (true);
 
-static async Task DisplayHistoricalMessagesAsync(PersistentAgentsClient client, ChatClientAgent agent, AgentSession thread)
+static async Task<ProjectsAgentRecord> GetOrCreateAgentAsync(
+    AIProjectClient aiProjectClient,
+    string agentName,
+    string modelName,
+    string instructions)
 {
     try
     {
-        // Get the thread ID from the serialized state
-        var serializedThread = await agent.SerializeSessionAsync(thread);
-        if (serializedThread.TryGetProperty("conversationId", out var threadIdElement))
-        {
-            var threadId = threadIdElement.GetString();
-            if (!string.IsNullOrEmpty(threadId))
-            {
-                var messages = client.Messages.GetMessagesAsync(
-                    threadId: threadId,
-                    order: ListSortOrder.Ascending);
-
-                await foreach (var message in messages)
-                {
-                    var role = message.Role.ToString();
-                    var content = string.Join("", message.ContentItems
-                        .OfType<MessageTextContent>()
-                        .Select(c => c.Text));
-
-                    if (string.IsNullOrEmpty(content))
-                        continue;
-
-                    if (role.Equals("user", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ConsoleUi.WriteHistoricalUserPrompt();
-                        ConsoleUi.WriteHistoricalMessage(content);
-                        Console.WriteLine();
-                    }
-                    else if (role.Equals("assistant", StringComparison.OrdinalIgnoreCase))
-                    {
-                        ConsoleUi.WriteHistoricalAgentPrompt();
-                        ConsoleUi.WriteHistoricalMessage(content);
-                        Console.WriteLine();
-                    }
-                }
-
-                Console.WriteLine();
-            }
-        }
+        return await aiProjectClient.AgentAdministrationClient.GetAgentAsync(agentName);
     }
-    catch (Exception ex)
+    catch (ClientResultException ex) when (ex.Status == 404)
     {
-        Console.ForegroundColor = ConsoleColor.DarkYellow;
-        Console.WriteLine($"Note: Could not load historical messages: {ex.Message}");
-        Console.ResetColor();
+        ProjectsAgentDefinition agentDefinition = new DeclarativeAgentDefinition(modelName)
+        {
+            Instructions = instructions,
+        };
+
+        ProjectsAgentVersion agentVersion = await aiProjectClient.AgentAdministrationClient.CreateAgentVersionAsync(
+            agentName: agentName,
+            options: new(agentDefinition));
+
+        return await aiProjectClient.AgentAdministrationClient.GetAgentAsync(agentVersion.Name);
     }
+}
+
+static async Task<string> GetConversationIdAsync(FoundryAgent agent, AgentSession thread)
+{
+    JsonElement serializedThread = await agent.SerializeSessionAsync(thread);
+    if (serializedThread.TryGetProperty("conversationId", out var conversationIdElement) &&
+        conversationIdElement.ValueKind == JsonValueKind.String &&
+        !string.IsNullOrWhiteSpace(conversationIdElement.GetString()))
+    {
+        return conversationIdElement.GetString()!;
+    }
+
+    throw new InvalidOperationException("The Foundry conversation session did not include a conversationId.");
 }
 
 #pragma warning restore MEAI001 // Type is for evaluation purposes only and is subject to change or removal in future updates. Suppress this diagnostic to proceed.
