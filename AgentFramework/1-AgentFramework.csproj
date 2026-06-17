@@ -9,11 +9,11 @@
 
   <ItemGroup>
     <PackageReference Include="Azure.AI.OpenAI" Version="2.1.0" />
+    <PackageReference Include="Azure.Monitor.OpenTelemetry.Exporter" Version="1.8.1" />
     <PackageReference Include="Microsoft.Agents.AI.OpenAI" Version="1.9.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.8" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.8" />
     <PackageReference Include="OpenTelemetry" Version="1.15.3" />
-    <PackageReference Include="OpenTelemetry.Exporter.Console" Version="1.15.3" />
   </ItemGroup>
 
   <ItemGroup>
